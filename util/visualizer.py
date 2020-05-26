@@ -5,7 +5,7 @@ import ntpath
 import time
 from . import util, html
 from subprocess import Popen, PIPE
-
+import h5py
 
 if sys.version_info[0] == 2:
     VisdomExceptionBase = Exception
@@ -41,6 +41,34 @@ def save_images(webpage, visuals, image_path, aspect_ratio=1.0, width=256):
         txts.append(label)
         links.append(image_name)
     webpage.add_images(ims, txts, links, width=width)
+
+def save_hsi_images(webpage, visuals, image_path, width=256):
+    """Save images to the disk.
+
+    Parameters:
+        webpage (the HTML class) -- the HTML webpage class that stores these imaegs (see html.py for more details)
+        visuals (OrderedDict)    -- an ordered dictionary that stores (name, images (either tensor or numpy) ) pairs
+        image_path (str)         -- the string is used to create image paths
+        aspect_ratio (float)     -- the aspect ratio of saved images
+        width (int)              -- the images will be resized to width x width
+
+    This function will save images stored in 'visuals' to the HTML file specified by 'webpage'.
+    """
+    image_dir = webpage.get_image_dir()
+    short_path = ntpath.basename(image_path[0])
+    name = os.path.splitext(short_path)[0]
+
+    #webpage.add_header(name)
+    #ims, txts, links = [], [], []
+
+    for label, im_data in visuals.items():
+        im = util.tensor2im(im_data)
+        image_name = '%s_%s.hdf5' % (name, label)
+        save_path = os.path.join(image_dir, image_name)
+        h5f = h5py.File(save_path, 'w')
+        h5f.create_dataset('data', data=im)
+        h5f.close()
+        del im
 
 
 class Visualizer():
@@ -158,8 +186,11 @@ class Visualizer():
             # save images to the disk
             for label, image in visuals.items():
                 image_numpy = util.tensor2im(image)
-                img_path = os.path.join(self.img_dir, 'epoch%.3d_%s.png' % (epoch, label))
-                util.save_image(image_numpy, img_path)
+                img_path = os.path.join(self.img_dir, 'epoch%.3d_%s.hdf5' % (epoch, label))
+                h5f = h5py.File(img_path, 'w')
+                h5f.create_dataset('data', data=image_numpy)
+                h5f.close()
+                del image_numpy
 
             # update website
             webpage = html.HTML(self.web_dir, 'Experiment name = %s' % self.name, refresh=1)
