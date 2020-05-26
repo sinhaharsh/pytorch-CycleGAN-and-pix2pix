@@ -3,7 +3,10 @@ from data.base_dataset import BaseDataset, get_transform
 from data.image_folder import make_dataset
 from PIL import Image
 import random
-
+import h5py
+import numpy as np
+from skimage.transform import resize as skResize
+from util.util import hsi_loader, normalize
 
 class UnalignedDataset(BaseDataset):
     """
@@ -24,7 +27,7 @@ class UnalignedDataset(BaseDataset):
         """
         BaseDataset.__init__(self, opt)
         self.dir_A = os.path.join(opt.dataroot, opt.phase + 'A')  # create a path '/path/to/data/trainA'
-        self.dir_B = os.path.join(opt.dataroot, opt.phase + 'B')  # create a path '/path/to/data/trainB'
+        self.dir_B = os.path.join(opt.dataroot_B, opt.phase + 'B')  # create a path '/path/to/data/trainB'
 
         self.A_paths = sorted(make_dataset(self.dir_A, opt.max_dataset_size))   # load images from '/path/to/data/trainA'
         self.B_paths = sorted(make_dataset(self.dir_B, opt.max_dataset_size))    # load images from '/path/to/data/trainB'
@@ -54,12 +57,21 @@ class UnalignedDataset(BaseDataset):
         else:   # randomize the index for domain B to avoid fixed pairs.
             index_B = random.randint(0, self.B_size - 1)
         B_path = self.B_paths[index_B]
-        A_img = Image.open(A_path).convert('RGB')
-        B_img = Image.open(B_path).convert('RGB')
-        # apply image transformation
-        A = self.transform_A(A_img)
-        B = self.transform_B(B_img)
-
+        #print(A_path)
+        #print(B_path)
+        A_img = np.array(Image.open(A_path).convert('RGB'))
+        A_img = self.stack(A_img)
+        
+        #Added a new loader for loading hsi images. Uncomment the following line for normal images.
+        try:
+            B_img = hsi_loader(B_path)
+        except KeyError:
+            print(B_path)
+        B_img = self.resize(B_img)
+        B = normalize(B_img, max_=4096)
+        A = normalize(A_img, max_=1)
+        
+        del A_img, B_img
         return {'A': A, 'B': B, 'A_paths': A_path, 'B_paths': B_path}
 
     def __len__(self):
@@ -69,3 +81,22 @@ class UnalignedDataset(BaseDataset):
         we take a maximum of
         """
         return max(self.A_size, self.B_size)
+    
+    def stack(self, img, resize=True):
+        
+        _R = img[:,:,0]
+        _G = img[:,:,1]
+        _B = img[:,:,2]
+        
+        R_img = np.stack((_R,)*10, axis=2)
+        G_img = np.stack((_G,)*10, axis=2)
+        B_img = np.stack((_B,)*11, axis=2)
+
+        hsi_img = np.concatenate((B_img, G_img, R_img), axis=2)
+        hsi_img = skResize(hsi_img, (self.opt.crop_size, self.opt.crop_size))
+        hsi_img = np.einsum('abc->cab', hsi_img)
+        return hsi_img
+    
+    def resize(self, img):
+        img = skResize(img, (self.opt.crop_size, self.opt.crop_size))
+        return img

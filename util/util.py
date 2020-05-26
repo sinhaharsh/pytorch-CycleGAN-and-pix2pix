@@ -4,25 +4,31 @@ import torch
 import numpy as np
 from PIL import Image
 import os
+import h5py
 
-
-def tensor2im(input_image, imtype=np.uint8):
-    """"Converts a Tensor array into a numpy image array.
-
+def tensor2im(input_image, imtype=np.float32):
+    """Converts a Tensor array into a numpy array.
+    
     Parameters:
-        input_image (tensor) --  the input image tensor array
-        imtype (type)        --  the desired type of the converted numpy array
+        input_image (tensor) -- the input tensor array.
+        imtype (type)        -- the desired type of the converted numpy array
     """
     if not isinstance(input_image, np.ndarray):
-        if isinstance(input_image, torch.Tensor):  # get the data from a variable
+        if isinstance(input_image, torch.Tensor):
             image_tensor = input_image.data
         else:
             return input_image
-        image_numpy = image_tensor[0].cpu().float().numpy()  # convert it into a numpy array
-        if image_numpy.shape[0] == 1:  # grayscale to RGB
+        image_numpy = image_tensor[0].cpu().float().numpy() # Convert it into a numpy array
+        del image_tensor
+        if image_numpy.shape[0] == 1: # grayscale to RGB
             image_numpy = np.tile(image_numpy, (3, 1, 1))
-        image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
-    else:  # if it is a numpy array, do nothing
+        elif image_numpy.shape[0] == 3: # a rgb image
+            image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
+        elif image_numpy.shape[0] == 31: # maybe something else, for example a hyperspectral image
+            image_numpy = denormalize(image_numpy)
+            image_numpy = np.transpose(image_numpy, (1, 2, 0))
+            
+    else:
         image_numpy = input_image
     return image_numpy.astype(imtype)
 
@@ -101,3 +107,37 @@ def mkdir(path):
     """
     if not os.path.exists(path):
         os.makedirs(path)
+
+def normalize(data, max_=4096, denormalize=False):
+    """
+    Using the ICVL BGU dataset, the max and min values were computed. 
+    Normalizing to 0-1
+    """
+    HSI_MAX = max_
+    HSI_MIN = 0
+
+    NEW_MAX = 1
+    NEW_MIN = -1
+    
+    scaled  = (data - HSI_MIN) * (NEW_MAX - NEW_MIN)/(HSI_MAX - HSI_MIN)  + NEW_MIN
+    return scaled.astype(np.float32)
+
+def denormalize(data, max_=4096):
+    """
+    Using the ICVL BGU dataset, the max and min values were computed. 
+    Normalizing to 0-1
+    """
+    HSI_MAX = max_
+    HSI_MIN = 0
+
+    NEW_MAX = 1
+    NEW_MIN = -1
+    scaled = (data - NEW_MIN) * (HSI_MAX - HSI_MIN)/(NEW_MAX - NEW_MIN) + HSI_MIN 
+    return scaled.astype(np.float32)
+
+def hsi_loader(path):
+    with h5py.File(path, 'r') as f:
+        d = np.array(f['data'])
+        hs_data = np.einsum('abc -> cab',d)
+    print('Inside hsi loader, {0}'.format(np.shape(hs_data)))
+    return hs_data
