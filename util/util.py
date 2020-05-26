@@ -134,10 +134,3 @@ def denormalize(data, max_=4096):
     NEW_MIN = -1
     scaled = (data - NEW_MIN) * (HSI_MAX - HSI_MIN)/(NEW_MAX - NEW_MIN) + HSI_MIN 
     return scaled.astype(np.float32)
-
-def hsi_loader(path):
-    with h5py.File(path, 'r') as f:
-        d = np.array(f['data'])
-        hs_data = np.einsum('abc -> cab',d)
-    print('Inside hsi loader, {0}'.format(np.shape(hs_data)))
-    return hs_data

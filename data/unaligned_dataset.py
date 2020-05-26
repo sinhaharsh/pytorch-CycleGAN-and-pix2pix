@@ -6,7 +6,7 @@ import random
 import h5py
 import numpy as np
 from skimage.transform import resize as skResize
-from util.util import hsi_loader, normalize
+from util.util import normalize
 
 class UnalignedDataset(BaseDataset):
     """
@@ -57,17 +57,16 @@ class UnalignedDataset(BaseDataset):
         else:   # randomize the index for domain B to avoid fixed pairs.
             index_B = random.randint(0, self.B_size - 1)
         B_path = self.B_paths[index_B]
-        #print(A_path)
-        #print(B_path)
+        
         A_img = np.array(Image.open(A_path).convert('RGB'))
         A_img = self.stack(A_img)
         
         #Added a new loader for loading hsi images. Uncomment the following line for normal images.
         try:
-            B_img = hsi_loader(B_path)
+            B_img = self.hsi_loader(B_path)
         except KeyError:
             print(B_path)
-        B_img = self.resize(B_img)
+
         B = normalize(B_img, max_=4096)
         A = normalize(A_img, max_=1)
         
@@ -93,10 +92,17 @@ class UnalignedDataset(BaseDataset):
         B_img = np.stack((_B,)*11, axis=2)
 
         hsi_img = np.concatenate((B_img, G_img, R_img), axis=2)
-        hsi_img = skResize(hsi_img, (self.opt.crop_size, self.opt.crop_size))
+        hsi_img = self.resize(hsi_img)
         hsi_img = np.einsum('abc->cab', hsi_img)
         return hsi_img
     
     def resize(self, img):
         img = skResize(img, (self.opt.crop_size, self.opt.crop_size))
         return img
+    
+    def hsi_loader(self, path):
+        with h5py.File(path, 'r') as f:
+            d = np.array(f['data'])
+            hs_data = np.einsum('abc -> cab',self.resize(d))
+        #print('Inside hsi loader, {0}'.format(np.shape(hs_data)))
+        return hs_data
