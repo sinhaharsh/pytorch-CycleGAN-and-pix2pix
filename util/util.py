@@ -6,7 +6,7 @@ from PIL import Image
 import os
 import h5py
 
-def tensor2im(input_image, imtype=np.float32):
+def tensor2im(input_image, label=None, imtype=np.float32):
     """Converts a Tensor array into a numpy array.
     
     Parameters:
@@ -20,6 +20,9 @@ def tensor2im(input_image, imtype=np.float32):
             return input_image
         image_numpy = image_tensor[0].cpu().float().numpy() # Convert it into a numpy array
         del image_tensor
+        
+        if label in ['fake_A', 'real_A', 'rec_A']:
+            image_numpy = destack(image_numpy)
         if image_numpy.shape[0] == 1: # grayscale to RGB
             image_numpy = np.tile(image_numpy, (3, 1, 1))
         elif image_numpy.shape[0] == 3: # a rgb image
@@ -134,3 +137,14 @@ def denormalize(data, max_=4096):
     NEW_MIN = -1
     scaled = (data - NEW_MIN) * (HSI_MAX - HSI_MIN)/(NEW_MAX - NEW_MIN) + HSI_MIN 
     return scaled.astype(np.float32)
+
+def destack(data):
+    img = denormalize(data, max_=1)
+    #print(np.shape(img))
+    _B = np.mean(img[:11], axis=0)
+    _G = np.mean(img[11:21], axis=0)
+    _R = np.mean(img[21:], axis=0)
+   
+    hsi_img = np.array((_R, _G, _B))
+    #print(np.shape(hsi_img))
+    return hsi_img

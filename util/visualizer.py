@@ -62,6 +62,7 @@ def save_hsi_images(webpage, visuals, image_path, width=256):
     #ims, txts, links = [], [], []
 
     for label, im_data in visuals.items():
+        print(name)
         im = util.tensor2im(im_data)
         image_name = '%s_%s.hdf5' % (name, label)
         save_path = os.path.join(image_dir, image_name)
@@ -185,7 +186,9 @@ class Visualizer():
             self.saved = True
             # save images to the disk
             for label, image in visuals.items():
-                image_numpy = util.tensor2im(image)
+                #if label in ['fake_A', 'real_A', 'rec_A']:
+                #    image = util.destack(image)
+                image_numpy = util.tensor2im(image, label)
                 img_path = os.path.join(self.img_dir, 'epoch%.3d_%s.hdf5' % (epoch, label))
                 h5f = h5py.File(img_path, 'w')
                 h5f.create_dataset('data', data=image_numpy)
