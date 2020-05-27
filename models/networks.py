@@ -154,6 +154,8 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         net = UnetGenerator(input_nc, output_nc, 5, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
     elif netG == 'unet_128':
         net = UnetGenerator(input_nc, output_nc, 7, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+    #     elif netG == 'adaUnet_128':
+    #         net = AdaUnetGenerator(input_nc, output_nc, 7, 64, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
     elif netG == 'unet_256':
         net = UnetGenerator(input_nc, output_nc, 8, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
     else:
@@ -467,6 +469,7 @@ class UnetGenerator(nn.Module):
         return self.model(input)
 
 
+
 class UnetSkipConnectionBlock(nn.Module):
     """Defines the Unet submodule with skip connection.
         X -------------------identity----------------------
@@ -474,7 +477,8 @@ class UnetSkipConnectionBlock(nn.Module):
     """
 
     def __init__(self, outer_nc, inner_nc, input_nc=None,
-                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+                 submodule=None, outermost=False, innermost=False, 
+                 norm_layer=nn.BatchNorm2d, use_dropout=False, use_transpose=False):
         """Construct a Unet submodule with skip connections.
 
         Parameters:
@@ -503,11 +507,11 @@ class UnetSkipConnectionBlock(nn.Module):
         upnorm = norm_layer(outer_nc)
 
         if outermost:
-            upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
-                                        kernel_size=4, stride=2,
-                                        padding=1)
+            upsample = nn.Upsample(scale_factor = 2, mode='bilinear')
+            reflect = nn.ReflectionPad2d(1)
+            upconv  = nn.Conv2d(inner_nc*2, outer_nc, kernel_size=3, stride=1, padding=0)
             down = [downconv]
-            up = [uprelu, upconv, nn.Tanh()]
+            up = [uprelu, upsample, reflect, upconv, nn.Tanh()]
             model = down + [submodule] + up
         elif innermost:
             upconv = nn.ConvTranspose2d(inner_nc, outer_nc,
@@ -517,12 +521,20 @@ class UnetSkipConnectionBlock(nn.Module):
             up = [uprelu, upconv, upnorm]
             model = down + up
         else:
-            upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
+            if use_transpose:
+                upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
                                         kernel_size=4, stride=2,
-                                        padding=1, bias=use_bias)
+                                        padding=1)
+                up = [uprelu, upconv, upnorm]
+            
+            else:
+                upsample = nn.Upsample(scale_factor = 2, mode='nearest')
+                reflect = nn.ReflectionPad2d(1)
+                upconv  = nn.Conv2d(inner_nc*2, outer_nc, kernel_size=3, stride=1, padding=0)
+                up = [uprelu, upsample, reflect, upconv, upnorm]
+            
             down = [downrelu, downconv, downnorm]
-            up = [uprelu, upconv, upnorm]
-
+            
             if use_dropout:
                 model = down + [submodule] + up + [nn.Dropout(0.5)]
             else:
@@ -536,7 +548,115 @@ class UnetSkipConnectionBlock(nn.Module):
         else:   # add skip connections
             return torch.cat([x, self.model(x)], 1)
 
+# class AdaUnetGenerator(nn.Module):
+#     """Create a Adaptive Instance Norm Unet-based generator"""
 
+#     def __init__(self, input_nc, output_nc, num_downs, style_dim, ngf=64, norm_layer=AdaIN, use_dropout=False):
+#         """Construct a Adaptive Instance Norm Unet generator
+#         Parameters:
+#             input_nc (int)  -- the number of channels in input images
+#             output_nc (int) -- the number of channels in output images
+#             num_downs (int) -- the number of downsamplings in UNet. For example, # if |num_downs| == 7,
+#                                 image of size 128x128 will become of size 1x1 # at the bottleneck
+#             ngf (int)       -- the number of filters in the last conv layer
+#             norm_layer      -- normalization layer
+
+#         We construct the U-Net from the innermost layer to the outermost layer.
+#         It is a recursive process.
+#         """
+#         super(AdaUnetGenerator, self).__init__()
+#         # construct unet structure
+#         unet_block = AdaUnetSkipConnectionBlock(ngf * 8, ngf * 8, style_dim, input_nc=None, submodule=None, norm_layer=norm_layer, innermost=True)  # add the innermost layer
+#         for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
+#             unet_block = AdaUnetSkipConnectionBlock(ngf * 8, ngf * 8, style_dim, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout)
+#         # gradually reduce the number of filters from ngf * 8 to ngf
+#         unet_block = AdaUnetSkipConnectionBlock(ngf * 4, ngf * 8, style_dim, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
+#         unet_block = AdaUnetSkipConnectionBlock(ngf * 2, ngf * 4, style_dim, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
+#         unet_block = AdaUnetSkipConnectionBlock(ngf, ngf * 2, style_dim, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
+#         self.model = AdaUnetSkipConnectionBlock(output_nc, ngf, style_dim, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)  # add the outermost layer
+
+#     def forward(self, input, style):
+#         """Standard forward"""
+#         return self.model(input, style)
+
+# class AdaUnetSkipConnectionBlock(nn.Module):
+#     """Defines the Adaptive Instance Norm Unet submodule with skip connection.
+#         X -------------------identity----------------------
+#         |-- downsampling -- |submodule| -- upsampling --|
+#     """
+
+#     def __init__(self, outer_nc, inner_nc, style_dim = 64, input_nc=None,
+#                  submodule=None, outermost=False, innermost=False, 
+#                  norm_layer=nn.BatchNorm2d, use_dropout=False, use_transpose=False):
+#         """Construct a Adaptive Instance Norm Unet submodule with skip connections.
+
+#         Parameters:
+#             outer_nc (int) -- the number of filters in the outer conv layer
+#             inner_nc (int) -- the number of filters in the inner conv layer
+#             input_nc (int) -- the number of channels in input images/features
+#             submodule (AdaUnetSkipConnectionBlock) -- previously defined submodules
+#             outermost (bool)    -- if this module is the outermost module
+#             innermost (bool)    -- if this module is the innermost module
+#             norm_layer          -- normalization layer
+#             use_dropout (bool)  -- if use dropout layers.
+#         """
+#         super(AdaUnetSkipConnectionBlock, self).__init__()
+#         self.outermost = outermost
+#         if type(norm_layer) == functools.partial:
+#             use_bias = norm_layer.func == nn.InstanceNorm2d
+#         else:
+#             use_bias = norm_layer == nn.InstanceNorm2d
+#         if input_nc is None:
+#             input_nc = outer_nc
+#         downconv = nn.Conv2d(input_nc, inner_nc, kernel_size=4,
+#                              stride=2, padding=1, bias=use_bias)
+#         downrelu = nn.LeakyReLU(0.2, True)
+#         downnorm = norm_layer(style_dim, inner_nc)
+#         uprelu = nn.ReLU(True)
+#         upnorm = norm_layer(style_dim, outer_nc)
+
+#         if outermost:
+#             upsample = nn.Upsample(scale_factor = 2, mode='bilinear')
+#             reflect = nn.ReflectionPad2d(1)
+#             upconv  = nn.Conv2d(inner_nc*2, outer_nc, kernel_size=3, stride=1, padding=0)
+#             down = [downconv]
+#             up = [uprelu, upsample, reflect, upconv, nn.Tanh()]
+#             model = down + [submodule] + up
+#         elif innermost:
+#             upconv = nn.ConvTranspose2d(inner_nc, outer_nc,
+#                                         kernel_size=4, stride=2,
+#                                         padding=1, bias=use_bias)
+#             down = [downrelu, downconv]
+#             up = [uprelu, upconv, upnorm]
+#             model = down + up
+#         else:
+#             if use_transpose:
+#                 upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
+#                                         kernel_size=4, stride=2,
+#                                         padding=1)
+#                 up = [uprelu, upconv, upnorm]
+            
+#             else:
+#                 upsample = nn.Upsample(scale_factor = 2, mode='nearest')
+#                 reflect = nn.ReflectionPad2d(1)
+#                 upconv  = nn.Conv2d(inner_nc*2, outer_nc, kernel_size=3, stride=1, padding=0)
+#                 up = [uprelu, upsample, reflect, upconv, upnorm]
+            
+#             down = [downrelu, downconv, downnorm]            
+#             if use_dropout:
+#                 model = down + [submodule] + up + [nn.Dropout(0.5)]
+#             else:
+#                 model = down + [submodule] + up
+
+#         self.model = nn.Sequential(*model)
+
+#     def forward(self, x, s):
+#         if self.outermost:
+#             return self.model(x, s)
+#         else:   # add skip connections
+#             return torch.cat([x, self.model(x, s)], 1)
+        
+        
 class NLayerDiscriminator(nn.Module):
     """Defines a PatchGAN discriminator"""
 
@@ -615,3 +735,15 @@ class PixelDiscriminator(nn.Module):
     def forward(self, input):
         """Standard forward."""
         return self.net(input)
+
+class AdaIN(nn.Module):
+    def __init__(self, style_dim, num_features):
+        super().__init__()
+        self.norm = nn.InstanceNorm2d(num_features, affine=False)
+        self.fc = nn.Linear(style_dim, num_features*2)
+
+    def forward(self, x, s):
+        h = self.fc(s)
+        h = h.view(h.size(0), h.size(1), 1, 1)
+        gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        return (1 + gamma) * self.norm(x) + beta

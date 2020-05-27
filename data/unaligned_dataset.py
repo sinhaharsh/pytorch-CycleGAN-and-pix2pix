@@ -6,7 +6,7 @@ import random
 import h5py
 import numpy as np
 from skimage.transform import resize as skResize
-from util.util import normalize
+from util.util import normalize, adaptive_instance_normalization
 
 class UnalignedDataset(BaseDataset):
     """
@@ -69,7 +69,7 @@ class UnalignedDataset(BaseDataset):
 
         B = normalize(B_img, max_=4096)
         A = normalize(A_img, max_=1)
-        
+        A = adaptive_instance_normalization(A, B)
         del A_img, B_img
         return {'A': A, 'B': B, 'A_paths': A_path, 'B_paths': B_path}
 
@@ -106,3 +106,4 @@ class UnalignedDataset(BaseDataset):
             hs_data = np.einsum('abc -> cab',self.resize(d))
         #print('Inside hsi loader, {0}'.format(np.shape(hs_data)))
         return hs_data
+    

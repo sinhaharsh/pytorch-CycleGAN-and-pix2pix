@@ -148,3 +148,18 @@ def destack(data):
     hsi_img = np.array((_R, _G, _B))
     #print(np.shape(hsi_img))
     return hsi_img
+
+def calc_mean_std(feat, eps=1e-5):
+    return np.mean(feat), np.std(feat)
+
+
+def adaptive_instance_normalization(content, style, channels=31):
+    normalized_feat = []
+    for i in range(channels):
+        style_mean, style_std = calc_mean_std(style[i])
+        content_mean, content_std = calc_mean_std(content[i])
+        feat = (content[i] - content_mean) / content_std
+        normalized_feat.append(feat * style_std + style_mean)
+    normalized_feat = np.array(normalized_feat)
+    #print(np.shape(normalized_feat))
+    return normalized_feat
