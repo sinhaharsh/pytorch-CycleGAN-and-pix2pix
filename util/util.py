@@ -141,9 +141,9 @@ def denormalize(data, max_=4096):
 def destack(data):
     img = denormalize(data, max_=1)
     #print(np.shape(img))
-    _B = np.mean(img[:11], axis=0)
+    _R = np.mean(img[:11], axis=0)
     _G = np.mean(img[11:21], axis=0)
-    _R = np.mean(img[21:], axis=0)
+    _B = np.mean(img[21:], axis=0)
    
     hsi_img = np.array((_R, _G, _B))
     #print(np.shape(hsi_img))
